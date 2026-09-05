@@ -195,6 +195,7 @@ impl Files {
         // append-only handle, so the checkpoint truncation would fail.
         let wal = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .write(true)
             .read(true)
             .open(Self::wal_path(db))?;
@@ -229,7 +230,8 @@ impl Files {
             n_pages: u64::from_le_bytes(all[12..20].try_into().unwrap()),
             last_txn: u64::from_le_bytes(all[20..28].try_into().unwrap()),
         };
-        let pages: Vec<&[u8]> = all.chunks_exact(PAGE_SIZE).skip(1).collect();
+        let (chunks, _) = all[PAGE_SIZE..].as_chunks::<PAGE_SIZE>();
+        let pages: Vec<&[u8]> = chunks.iter().map(|c| c.as_slice()).collect();
         if pages.len() as u64 != header.n_pages {
             return Err(format!(
                 "page count mismatch: header says {}, file has {}",
