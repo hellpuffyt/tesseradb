@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --all-targets
+      - name: Test
+        run: cargo test --release
+      - name: Real execution — script through the shell
+        shell: bash
+        run: |
+          ./target/release/tessera "$RUNNER_TEMP/ci.db" -f examples/agent_tasks.sql
+          ./target/release/tessera "$RUNNER_TEMP/ci.db" -e "SELECT COUNT(*) FROM task" | tee out.txt
+          grep -q "^3" out.txt
+          ./target/release/tessera "$RUNNER_TEMP/ci.db" -e "SELECT state FROM task AS OF TXN 2 WHERE id = 1" | grep -q queued
+      - name: Benchmark smoke
+        run: cargo run --release --example bench
+
+  lint:
+    name: fmt, clippy, unsafe, audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - name: No unsafe, no dependencies
+        run: |
+          ! grep -rn "unsafe" src/
+          test "$(grep -c '^\[\[package\]\]' Cargo.lock)" = "1"
+      - name: cargo audit
+        run: cargo install cargo-audit --locked && cargo audit
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

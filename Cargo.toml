@@ -1,0 +1,20 @@
+[package]
+name = "tesseradb"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Embedded temporal database: every row version retained, AS OF queries, append-only streams, WAL recovery. Zero dependencies."
+license = "MIT"
+repository = "https://github.com/hellpuffyt/tesseradb"
+keywords = ["database", "embedded", "temporal", "mvcc", "sql"]
+categories = ["database-implementations"]
+
+[[bin]]
+name = "tessera"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+lto = true
+codegen-units = 1
