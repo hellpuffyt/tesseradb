@@ -38,7 +38,7 @@ fn random_token_soup_never_panics() {
         let sql: Vec<&str> = (0..n).map(|_| rng.pick(ATOMS)).collect();
         let sql = sql.join(" ");
         let _ = s.execute(&sql); // Ok or Err, never panic
-        if s.in_transaction() && rng.next() % 4 == 0 {
+        if s.in_transaction() && rng.next().is_multiple_of(4) {
             let _ = s.execute("ROLLBACK");
         }
     }
