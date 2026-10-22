@@ -6,6 +6,21 @@ out explicitly.
 
 ## [Unreleased]
 
+### Fixed
+- Data loss: recovery skipped a torn WAL tail but left it in the file, so
+  commits made after reopening were appended behind the garbage and lost
+  at the next crash. The torn tail is now truncated (and fsynced) during
+  recovery.
+- Hostile/corrupt page files and CRC-valid WAL frames could panic
+  `Db::open` (slot table past the page, overflow-chain arithmetic, rows with
+  too few values, index on an unknown column, id overflow); all are now
+  errors.
+- CI "No unsafe" step could never fail (`! grep` is exempt from `bash -e`);
+  `#![forbid(unsafe_code)]` now enforces it.
+
+### Changed
+- SECURITY.md: reporting link; no longer cites `cargo geiger` (not run).
+
 ## [0.1.0] — 2026-09-06
 
 First release. On-disk format version 1.
