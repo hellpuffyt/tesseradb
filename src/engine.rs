@@ -56,17 +56,31 @@ impl Table {
     fn pk(&self) -> Option<usize> {
         self.cols.iter().position(|c| c.primary_key)
     }
-    fn add_version(&mut self, v: Version) {
+    /// Adds a row version. Versions also arrive from disk (page file, WAL),
+    /// so arity and ids are validated rather than assumed.
+    fn add_version(&mut self, v: Version) -> Result<(), String> {
+        if v.vals.len() != self.cols.len() {
+            return Err(format!(
+                "corrupt row for {}: {} values for {} columns",
+                self.name,
+                v.vals.len(),
+                self.cols.len()
+            ));
+        }
+        let next = v.row_id.checked_add(1).ok_or("corrupt row id")?;
         let idx = self.versions.len();
         self.by_row.entry(v.row_id).or_default().push(idx);
         for (col, index) in &mut self.indexes {
-            let c = self.cols.iter().position(|d| &d.name == col).unwrap();
+            let c = self
+                .cols
+                .iter()
+                .position(|d| &d.name == col)
+                .ok_or("index on unknown column")?;
             index.entry(v.vals[c].clone()).or_default().push(idx);
         }
         self.versions.push(v);
-        self.next_row_id = self
-            .next_row_id
-            .max(self.versions.last().unwrap().row_id + 1);
+        self.next_row_id = self.next_row_id.max(next);
+        Ok(())
     }
     /// Marks the currently-live version of `row_id` as ended by `txn`.
     fn end_row(&mut self, row_id: u64, txn: u64) -> bool {
@@ -80,13 +94,16 @@ impl Table {
         }
         false
     }
-    fn build_index(&mut self, col: &str) {
-        let c = self.col(col).unwrap();
+    fn build_index(&mut self, col: &str) -> Result<(), String> {
+        let c = self
+            .col(col)
+            .ok_or_else(|| format!("no such column: {col}"))?;
         let mut index: BTreeMap<Value, Vec<usize>> = BTreeMap::new();
         for (i, v) in self.versions.iter().enumerate() {
             index.entry(v.vals[c].clone()).or_default().push(i);
         }
         self.indexes.insert(self.cols[c].name.clone(), index);
+        Ok(())
     }
 }
 
@@ -256,7 +273,8 @@ impl Inner {
                 }
                 let mut t = new_table(id, name.clone(), cols);
                 t.next_row_id = next_row_id;
-                self.next_table_id = self.next_table_id.max(id + 1);
+                let next_id = id.checked_add(1).ok_or("corrupt table id")?;
+                self.next_table_id = self.next_table_id.max(next_id);
                 self.tables.insert(table_key(&name), t);
             }
             2 => {
@@ -279,7 +297,7 @@ impl Inner {
                     xmin,
                     xmax,
                     vals,
-                });
+                })?;
             }
             3 => {
                 let name = r.str()?;
@@ -299,7 +317,7 @@ impl Inner {
                     .values_mut()
                     .find(|t| t.id == id)
                     .ok_or("index for unknown table")?;
-                t.build_index(&col);
+                t.build_index(&col)?;
             }
             k => return Err(format!("unknown record kind {k}")),
         }
@@ -385,7 +403,7 @@ impl Inner {
                     self.tables
                         .get_mut(&table_key(table))
                         .ok_or("no such table")?
-                        .build_index(col);
+                        .build_index(col)?;
                 }
                 Op::Insert(table, vals) => {
                     let t = self
@@ -398,7 +416,7 @@ impl Inner {
                         xmin: txn,
                         xmax: 0,
                         vals: vals.clone(),
-                    });
+                    })?;
                 }
                 Op::Delete(table, row_id) => {
                     let t = self
@@ -434,7 +452,8 @@ fn new_table(id: u32, name: String, cols: Vec<ColumnDef>) -> Table {
     };
     if let Some(pk) = t.pk() {
         let name = t.cols[pk].name.clone();
-        t.build_index(&name);
+        // The column comes from `t.cols` itself, so this cannot fail.
+        let _ = t.build_index(&name);
     }
     t
 }
