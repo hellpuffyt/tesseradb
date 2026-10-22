@@ -95,8 +95,12 @@ impl Page {
         let mut out = Vec::new();
         for i in 0..self.n_slots() {
             let s = PAGE_HDR + i * SLOT;
-            let off = u16::from_le_bytes([self.data[s], self.data[s + 1]]) as usize;
-            let len = u16::from_le_bytes([self.data[s + 2], self.data[s + 3]]) as usize;
+            let slot = self
+                .data
+                .get(s..s + SLOT)
+                .ok_or("corrupt page: slot table runs past the page")?;
+            let off = u16::from_le_bytes([slot[0], slot[1]]) as usize;
+            let len = u16::from_le_bytes([slot[2], slot[3]]) as usize;
             out.push(self.data.get(off..off + len).ok_or("corrupt slot")?);
         }
         Ok(out)
@@ -251,16 +255,19 @@ impl Files {
                     let first = u64::from_le_bytes(rec[1..9].try_into().unwrap()) as usize;
                     let total = u32::from_le_bytes(rec[9..13].try_into().unwrap()) as usize;
                     let n = total.div_ceil(OVERFLOW_PAYLOAD);
+                    // Untrusted: resolve the chain against the pages that
+                    // exist before reserving anything.
+                    let chain = first
+                        .checked_add(n)
+                        .and_then(|end| pages.get(first..end))
+                        .ok_or("overflow chain out of range")?;
                     let mut buf = Vec::with_capacity(total);
-                    for p in pages
-                        .get(first..first + n)
-                        .ok_or("overflow chain out of range")?
-                    {
+                    for p in chain {
                         buf.extend_from_slice(&p[..OVERFLOW_PAYLOAD]);
                     }
                     buf.truncate(total);
                     records.push(buf);
-                    skip_until = skip_until.max(first + n);
+                    skip_until = skip_until.max(first + chain.len());
                 } else {
                     records.push(rec.to_vec());
                 }
@@ -317,13 +324,17 @@ impl Files {
     }
 
     /// Every intact frame payload in order; stops at the first torn or
-    /// corrupt frame (a crash mid-append), which is discarded.
+    /// corrupt frame (a crash mid-append). That frame and everything after
+    /// it are cut off the file (and the cut fsynced): otherwise the next
+    /// commit would be appended behind the garbage, where the next recovery
+    /// could never reach it.
     pub fn read_wal(&mut self) -> std::io::Result<Vec<Vec<u8>>> {
         self.wal.seek(SeekFrom::Start(0))?;
         let mut all = Vec::new();
         self.wal.read_to_end(&mut all)?;
         let mut r = Reader::new(&all);
         let mut out = Vec::new();
+        let mut good_end = 0;
         while !r.done() {
             let Ok(len) = r.u32() else { break };
             let Ok(crc) = r.u32() else { break };
@@ -334,6 +345,11 @@ impl Files {
                 break;
             }
             out.push(payload.to_vec());
+            good_end = r.pos;
+        }
+        if good_end < all.len() {
+            self.wal.set_len(good_end as u64)?;
+            self.wal.sync_all()?;
         }
         Ok(out)
     }

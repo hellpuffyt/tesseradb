@@ -18,6 +18,8 @@
 //! assert_eq!(then[0][0], tesseradb::Value::Text("a".into()));
 //! ```
 
+#![forbid(unsafe_code)]
+
 pub mod engine;
 pub mod lexer;
 pub mod parser;

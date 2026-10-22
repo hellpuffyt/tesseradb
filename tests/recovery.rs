@@ -133,3 +133,33 @@ fn corrupt_page_file_is_rejected_loudly() {
     };
     assert!(err.contains("bad magic"), "{err}");
 }
+
+/// Regression: recovery stopped at a torn WAL tail but left the garbage in
+/// place, so the next commit was appended *after* it — and the following
+/// recovery stopped at the same garbage, silently losing every transaction
+/// committed (and fsynced) since the first crash.
+#[test]
+fn commits_after_recovering_a_torn_tail_survive_the_next_crash() {
+    let path = tmp("torn-twice");
+    {
+        let db = Db::open(&path).unwrap();
+        let mut s = db.session();
+        s.execute("CREATE TABLE t (id INT PRIMARY KEY)").unwrap();
+        s.execute("INSERT INTO t VALUES (1)").unwrap();
+        std::mem::forget(db); // crash: no checkpoint
+    }
+    let wal = tesseradb::storage::Files::wal_path(&path);
+    let mut f = OpenOptions::new().append(true).open(&wal).unwrap();
+    f.write_all(&[200, 0, 0, 0, 1, 2, 3, 4, 9, 9, 9]).unwrap();
+    drop(f);
+    {
+        let db = Db::open(&path).unwrap();
+        let mut s = db.session();
+        s.execute("INSERT INTO t VALUES (2)").unwrap();
+        s.execute("APPEND TO log 'after crash'").unwrap();
+        std::mem::forget(db); // second crash: no checkpoint
+    }
+    let db = Db::open(&path).unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM t"), 2);
+    assert_eq!(db.session().query("READ log SINCE 0").unwrap().len(), 1);
+}

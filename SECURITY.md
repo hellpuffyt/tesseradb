@@ -11,11 +11,11 @@ What it does defend against:
 
 | Threat | Defence | Evidence |
 |---|---|---|
-| Crash or power loss mid-commit | WAL frames are CRC32-checked; recovery discards the torn tail. Page file replaced by atomic rename. | `tests/recovery.rs` |
-| Corrupt or hostile database file | Every decode is bounds-checked (`Reader`); bad magic / header CRC / page count / slot offsets are errors, never panics or out-of-bounds reads. | `tests/recovery.rs::corrupt_page_file_is_rejected_loudly`, `tests/fuzz.rs::random_wal_bytes_never_panic_recovery` |
+| Crash or power loss mid-commit | WAL frames are CRC32-checked; recovery discards the torn tail and truncates it from the file so later commits stay reachable. Page file replaced by atomic rename. | `tests/recovery.rs` |
+| Corrupt or hostile database file | Every decode is bounds-checked (`Reader`); bad magic / header CRC / page count / slot tables / overflow chains / row arity / index columns / id overflow are errors, never panics or out-of-bounds reads. | `tests/recovery.rs::corrupt_page_file_is_rejected_loudly`, `tests/hostile_files.rs`, `tests/fuzz.rs::random_wal_bytes_never_panic_recovery` |
 | Hostile SQL text (from users, LLM output, …) | Parser and evaluator are pure functions of their input; no string-built SQL inside the engine; integer arithmetic is checked (overflow and division by zero are errors). | `tests/fuzz.rs::random_token_soup_never_panics`, `tests/sql.rs::expressions` |
 | Lost updates under concurrency | Optimistic validation at commit: conflicting writes fail loudly. | `tests/concurrency.rs` |
-| Memory-unsafety | 100% safe Rust, zero `unsafe`, zero dependencies (`cargo geiger` reports none; CI runs `cargo audit` on the empty lock file to keep it that way). | `grep -r unsafe src` |
+| Memory-unsafety | 100% safe Rust (`#![forbid(unsafe_code)]`), zero dependencies (CI runs `cargo audit` on the one-package lock file to keep it that way). | compiler-enforced; CI checks the attribute |
 
 What it does **not** defend against:
 
@@ -32,9 +32,9 @@ What it does **not** defend against:
 
 ## Reporting a vulnerability
 
-Open a GitHub security advisory on this repository (Security → Report a
-vulnerability) or email the maintainer listed in `Cargo.toml`. Please include a
-reproducer. You will get an acknowledgement within 7 days.
+Open a private GitHub security advisory at
+https://github.com/hellpuffyt/tesseradb/security/advisories/new. Please
+include a reproducer. You will get an acknowledgement within 7 days.
 
 ## Supported versions
 

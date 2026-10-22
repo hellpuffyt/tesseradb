@@ -7,6 +7,8 @@
 //! tessera --memory                scratch database
 //! ```
 
+#![forbid(unsafe_code)]
+
 use std::{
     io::{BufRead, Write},
     path::Path,

@@ -39,14 +39,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans the PR's commit range; a shallow clone lacks it
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - name: No unsafe, no dependencies
+        # `! cmd` never trips `bash -e`, so the old `! grep` line could not
+        # fail the step. Unsafe is now forbidden by the compiler.
         run: |
-          ! grep -rn "unsafe" src/
+          grep -qx '#!\[forbid(unsafe_code)\]' src/lib.rs
+          grep -qx '#!\[forbid(unsafe_code)\]' src/main.rs
           test "$(grep -c '^\[\[package\]\]' Cargo.lock)" = "1"
       - name: cargo audit
         run: cargo install cargo-audit --locked && cargo audit
