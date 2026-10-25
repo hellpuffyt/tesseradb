@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="t d">
+<title id="t">TesseraDB architecture</title>
+<desc id="d">SQL text flows through lexer.rs and parser.rs into a Session in engine.rs. Reads scan the in-memory Db at a snapshot; COMMIT validates, appends one CRC32 WAL frame with fsync, applies with txn = last_txn + 1 and publishes the snapshot. Checkpoint rewrites the slotted page file atomically; open replays the WAL and truncates a torn tail.</desc>
+<defs><marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#A3AAA6"/></marker><marker id="ha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3FBF8A"/></marker></defs>
+<rect width="1200" height="500" fill="#0C0D0D"/>
+<rect x="30" y="40" width="200" height="100" rx="8" fill="#17191A" stroke="#2A2E2D" stroke-width="1"/>
+<text x="44" y="64" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#EEEAE2" text-anchor="start" font-weight="600">SQL text</text>
+<text x="44" y="86" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">tessera -e / -f / REPL</text>
+<text x="44" y="103" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">Session::execute()</text>
+<rect x="270" y="40" width="190" height="100" rx="8" fill="#17191A" stroke="#2A2E2D" stroke-width="1"/>
+<text x="284" y="64" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#EEEAE2" text-anchor="start" font-weight="600">lexer.rs</text>
+<text x="284" y="86" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">text → Vec&lt;Token&gt;</text>
+<rect x="500" y="40" width="210" height="100" rx="8" fill="#17191A" stroke="#2A2E2D" stroke-width="1"/>
+<text x="514" y="64" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#EEEAE2" text-anchor="start" font-weight="600">parser.rs</text>
+<text x="514" y="86" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">Token → Stmt</text>
+<text x="514" y="103" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">AS OF TXN n · HISTORY</text>
+<text x="514" y="120" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">APPEND TO · READ … SINCE</text>
+<rect x="750" y="40" width="420" height="100" rx="8" fill="#17191A" stroke="#2A2E2D" stroke-width="1"/>
+<text x="764" y="64" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#EEEAE2" text-anchor="start" font-weight="600">engine.rs · Session</text>
+<text x="764" y="86" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">Pending: buffered ops, own writes overlaid on reads</text>
+<text x="764" y="103" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">no locks held until COMMIT (optimistic)</text>
+<path d="M230 90 L268 90" fill="none" stroke="#A3AAA6" stroke-width="1.4" marker-end="url(#h)"/>
+<path d="M460 90 L498 90" fill="none" stroke="#A3AAA6" stroke-width="1.4" marker-end="url(#h)"/>
+<path d="M710 90 L748 90" fill="none" stroke="#A3AAA6" stroke-width="1.4" marker-end="url(#h)"/>
+<rect x="30" y="200" width="540" height="130" rx="8" fill="#17191A" stroke="#2A2E2D" stroke-width="1"/>
+<text x="44" y="224" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#EEEAE2" text-anchor="start" font-weight="600">engine.rs · Db  (RwLock&lt;Inner&gt;)</text>
+<text x="44" y="246" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">tables → Vec&lt;Version { row_id, xmin, xmax, values }&gt;</text>
+<text x="44" y="263" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">indexes: col → BTreeMap (PRIMARY KEY + CREATE INDEX)</text>
+<text x="44" y="280" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">streams → Vec&lt;Event { seq, txn, value }&gt;</text>
+<text x="44" y="297" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">scan(): index probe on col = literal, else full scan</text>
+<text x="44" y="314" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">visible at s  ⇔  xmin ≤ s  ∧  (xmax = 0  ∨  xmax &gt; s)</text>
+<rect x="610" y="200" width="560" height="130" rx="8" fill="#17191A" stroke="#3FBF8A" stroke-width="1.5"/>
+<text x="624" y="224" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#3FBF8A" text-anchor="start" font-weight="600">commit()  — serialised by commit_lock</text>
+<text x="624" y="246" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">1. validate — PK uniqueness; deleted rows still live → else write conflict</text>
+<text x="624" y="263" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">2. log — encode ops as one WAL frame, fsync</text>
+<text x="624" y="280" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">3. apply — new versions with txn = last_txn + 1</text>
+<text x="624" y="297" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">4. publish — bump last_txn → snapshot visible to new readers</text>
+<path d="M1050 140 L1050 198" fill="none" stroke="#3FBF8A" stroke-width="1.4" marker-end="url(#ha)"/>
+<text x="1060" y="174" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#A3AAA6" text-anchor="start" font-weight="400">COMMIT / autocommit</text>
+<path d="M800 140 L800 170 L300 170 L300 198" fill="none" stroke="#A3AAA6" stroke-width="1.4" marker-end="url(#h)"/>
+<text x="550" y="163" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#A3AAA6" text-anchor="middle" font-weight="400">SELECT · HISTORY · READ at snapshot s</text>
+<path d="M610 300 L572 300" fill="none" stroke="#A3AAA6" stroke-width="1.4" marker-end="url(#h)"/>
+<text x="591" y="292" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#A3AAA6" text-anchor="middle" font-weight="400">apply</text>
+<rect x="30" y="380" width="540" height="100" rx="8" fill="#17191A" stroke="#2A2E2D" stroke-width="1"/>
+<text x="44" y="404" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#EEEAE2" text-anchor="start" font-weight="600">storage.rs · &lt;db&gt; page file</text>
+<text x="44" y="426" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">header 'TSRA' + CRC · slotted pages · overflow chains</text>
+<text x="44" y="443" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">checkpoint: write &lt;db&gt;.tmp → fsync → rename → truncate WAL</text>
+<text x="44" y="460" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">runs on close, on .checkpoint, or when the WAL passes 8 MiB</text>
+<rect x="610" y="380" width="560" height="100" rx="8" fill="#17191A" stroke="#2A2E2D" stroke-width="1"/>
+<text x="624" y="404" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#EEEAE2" text-anchor="start" font-weight="600">storage.rs · &lt;db&gt;.wal</text>
+<text x="624" y="426" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">frame = [len u32][crc32 u32][txn, ops…], fsync per commit</text>
+<text x="624" y="443" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">Db::open: replay frames with txn &gt; header.last_txn</text>
+<text x="624" y="460" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#A3AAA6" text-anchor="start" font-weight="400">stop and truncate at the first torn or bad-CRC frame</text>
+<path d="M300 330 L300 378" fill="none" stroke="#A3AAA6" stroke-width="1.4" marker-end="url(#h)"/>
+<text x="310" y="358" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#A3AAA6" text-anchor="start" font-weight="400">Db::checkpoint()</text>
+<path d="M890 330 L890 378" fill="none" stroke="#3FBF8A" stroke-width="1.4" marker-end="url(#ha)"/>
+<text x="900" y="358" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#A3AAA6" text-anchor="start" font-weight="400">append_wal()</text>
+</svg>
