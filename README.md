@@ -4,8 +4,6 @@
 
 [Case study ↗](https://hellpuff.dev/work/tesseradb)
 
-<img src="docs/assets/overview.svg" width="100%" alt="TesseraDB architecture: SQL text goes through lexer.rs and parser.rs to a Session in engine.rs; reads scan the in-memory Db at a snapshot, COMMIT validates, appends one CRC32 WAL frame with fsync, applies with txn = last_txn + 1 and publishes; checkpoint rewrites the slotted page file atomically and open replays the WAL.">
-
 TesseraDB is a single-file, zero-dependency SQL database written in Rust. Every
 row version is retained, so any query can be asked *as of* an earlier
 transaction, and append-only event streams live in the same transactions and
@@ -36,6 +34,50 @@ id │ state
 ───┼───────
 7  │ failed
 (1 row)
+```
+
+## Demo
+
+A real terminal capture of the release binary running the bundled example,
+`examples/agent_tasks.sql`, against a fresh `app.db`. Task 1 moves through
+queued, running, failed, running and done. `HISTORY` shows every version with
+the transactions that created (`_xmin`) and superseded (`_xmax`) it,
+`AS OF TXN 5` reads the failed state back, and the `audit` stream holds the
+events appended in the same transactions.
+
+<img src="docs/screenshots/shell-history-as-of-and-stream.png" width="100%" alt="Terminal: tessera runs examples/agent_tasks.sql, then HISTORY task WHERE id = 1 lists five row versions with _xmin and _xmax, a SELECT AS OF TXN 5 returns failed with 1 attempt, and READ audit returns three stream entries with their transaction numbers">
+
+<sub>Terminal capture of `tessera` 0.1.0 (release build, macOS). Same commands and output as the block below.</sub>
+
+```
+$ tessera app.db -f examples/agent_tasks.sql
+id │ title                  │ state  │ attempts
+───┼────────────────────────┼────────┼─────────
+1  │ implement WAL recovery │ done   │ 2       
+2  │ write benchmarks       │ queued │ 0       
+3  │ review security notes  │ queued │ 0       
+(3 rows)
+$ tessera app.db -e "HISTORY task WHERE id = 1"
+_row │ _xmin │ _xmax │ id │ title                  │ state   │ attempts
+─────┼───────┼───────┼────┼────────────────────────┼─────────┼─────────
+1    │ 2     │ 4     │ 1  │ implement WAL recovery │ queued  │ 0       
+4    │ 4     │ 5     │ 1  │ implement WAL recovery │ running │ 1       
+5    │ 5     │ 6     │ 1  │ implement WAL recovery │ failed  │ 1       
+6    │ 6     │ 7     │ 1  │ implement WAL recovery │ running │ 2       
+7    │ 7     │ 0     │ 1  │ implement WAL recovery │ done    │ 2       
+(5 rows)
+$ tessera app.db -e "SELECT state, attempts FROM task AS OF TXN 5 WHERE id = 1"
+state  │ attempts
+───────┼─────────
+failed │ 1       
+(1 row)
+$ tessera app.db -e "READ audit"
+seq │ txn │ value                      
+────┼─────┼────────────────────────────
+1   │ 4   │ task 1 started by worker-a 
+2   │ 5   │ task 1 failed: test timeout
+3   │ 6   │ task 1 retried by worker-b 
+(3 rows)
 ```
 
 ## What is it?
@@ -94,6 +136,12 @@ indexes that the planner actually uses for `UPDATE`/`DELETE` as well as
 `SELECT`, and a fuzz suite that throws random token soup and random WAL bytes
 at it. The recovery tests kill the process's view of the database *without*
 checkpointing and assert on what comes back.
+
+## Architecture
+
+<img src="docs/assets/overview.svg" width="100%" alt="TesseraDB architecture: SQL text goes through lexer.rs and parser.rs to a Session in engine.rs; reads scan the in-memory Db at a snapshot, COMMIT validates, appends one CRC32 WAL frame with fsync, applies with txn = last_txn + 1 and publishes; checkpoint rewrites the slotted page file atomically and open replays the WAL.">
+
+<sub>Diagram (not a screenshot) of the write and read paths through `lexer.rs`, `parser.rs` and `engine.rs`, the WAL and the page file. [ARCHITECTURE.md](ARCHITECTURE.md) has the detail.</sub>
 
 ## Benchmarks
 
