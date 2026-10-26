@@ -2,6 +2,10 @@
 
 **An embedded database where the past is a first-class query.**
 
+[Case study ↗](https://hellpuff.dev/work/tesseradb)
+
+<img src="docs/assets/overview.svg" width="100%" alt="TesseraDB architecture: SQL text goes through lexer.rs and parser.rs to a Session in engine.rs; reads scan the in-memory Db at a snapshot, COMMIT validates, appends one CRC32 WAL frame with fsync, applies with txn = last_txn + 1 and publishes; checkpoint rewrites the slotted page file atomically and open replays the WAL.">
+
 TesseraDB is a single-file, zero-dependency SQL database written in Rust. Every
 row version is retained, so any query can be asked *as of* an earlier
 transaction, and append-only event streams live in the same transactions and
@@ -19,6 +23,9 @@ SELECT state FROM task AS OF TXN 3 WHERE id = 7;     -- running
 HISTORY task WHERE id = 7;                           -- all three versions, with xmin/xmax
 READ audit SINCE 0;                                  -- seq, txn, value
 ```
+
+With the statements above saved as `demo.sql` and applied once
+(`tessera app.db -f demo.sql`), the shell shows the current state:
 
 ```
 $ cargo install --path .
@@ -104,7 +111,9 @@ checkpointing and assert on what comes back.
 | Checkpoint, 55 k versions | 26 ms | 22 ms |
 
 Autocommit on disk is dominated by `fsync`; batch writes in a transaction when
-you can. Numbers are from one run and will vary by machine.
+you can. Numbers are from one run and will vary by machine: on a busy
+Apple-silicon Mac the same command measured 219 autocommit inserts/s and
+0.67 M primary-key lookups/s on disk.
 
 ## Status and limits
 
@@ -117,6 +126,8 @@ Honest limits:
   `GROUP BY`, no `ALTER TABLE`, one primary key column per table.
 - History is never garbage-collected yet (`VACUUM TO TXN n` is on the roadmap).
 - One process at a time may open a file; there is no file lock yet.
+- `tessera -f script.sql` prints only the result of the script's last
+  statement.
 
 ## Build, test, run
 
@@ -127,7 +138,21 @@ cargo run --release --example bench
 tessera app.db -f examples/agent_tasks.sql
 ```
 
-Minimum Rust: 1.88 (edition 2024).
+Minimum Rust: 1.88 (edition 2024). The suite is 26 integration tests in
+`tests/` (`sql`, `recovery`, `concurrency`, `hostile_files`, `fuzz`) plus one
+doctest; CI runs it on Linux, macOS and Windows.
+
+### The `tessera` shell
+
+```
+tessera app.db                  interactive shell (.help, .checkpoint, .quit)
+tessera app.db -e "SELECT …"    run one statement and print its result
+tessera app.db -f script.sql    run a file; prints the last statement's result
+tessera --memory                scratch database, nothing written to disk
+```
+
+The shell checkpoints on exit. Running `tessera` with no arguments prints the
+usage line and exits with status 2.
 
 ## Using it as a library
 
